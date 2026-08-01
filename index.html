@@ -200,6 +200,8 @@
             decided</em></span>
       </label>
 
+      <p class="version-line" id="versionLine"></p>
+
       <div class="modal-actions">
         <button class="btn primary" data-close="settingsModal">Done</button>
       </div>
@@ -251,7 +253,31 @@
     // Cache the game for offline play. Harmless when unsupported or on file://
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js').catch(function () { /* offline play unavailable */ });
+        // An installed copy answers from its own cache, so without this it
+        // keeps serving the build it already has: the new worker installs in
+        // the background, and only the launch after that shows the new
+        // version. Ask for the check, then act on it as soon as it lands.
+        var hadWorker = !!navigator.serviceWorker.controller;
+        var reloading = false;
+
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!hadWorker || reloading) return;   // first install: nothing to replace
+          reloading = true;
+          if (window.SC && SC.App && SC.App.onUpdateReady) SC.App.onUpdateReady();
+          else window.location.reload();
+        });
+
+        navigator.serviceWorker.register('sw.js').then(function (reg) {
+          // Checking for a new version fails whenever there is no network,
+          // which for this game is an ordinary state rather than an error.
+          var check = function () { reg.update().catch(function () { /* offline */ }); };
+          check();
+          // and look again when the app is brought back to the foreground,
+          // which on a phone is the only "page load" it ever gets
+          document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) check();
+          });
+        }).catch(function () { /* offline play unavailable */ });
       });
     }
   </script>

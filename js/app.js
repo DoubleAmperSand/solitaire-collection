@@ -15,6 +15,16 @@
 
   var ORDER = ['klondike', 'spider', 'freecell', 'pyramid'];
 
+  /*
+   * Shown in settings so it is possible to tell, on a phone, which build is
+   * actually running. An installed copy serves itself from its own cache, so
+   * "is my fix live" and "is my fix on this device" are different questions
+   * and there was previously no way to answer the second. Bump this and
+   * CACHE in sw.js together.
+   */
+  var VERSION = '4';
+  var RELEASED = '1 August 2026';
+
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
@@ -251,6 +261,8 @@
     document.body.dataset.screen = name;
     if (name === 'home') {
       stopTimer();
+      // an update that arrived mid-game applies as soon as the game is over
+      if (App.updatePending) { global.location.reload(); return; }
       renderHome();
     } else {
       // the table needs a real width before it can lay itself out
@@ -857,9 +869,32 @@
 
   /* ----------------------------------------------------------------- boot */
 
+  /**
+   * A new version has installed itself underneath us. Reload so it takes
+   * effect now rather than in two launches' time — but not in the middle of
+   * a game, which reloading would throw away.
+   */
+  function onUpdateReady() {
+    if (document.body.dataset.screen !== 'game') {
+      global.location.reload();
+      return;
+    }
+    App.updatePending = true;
+    toast('Update ready — it will apply next time you open the game');
+  }
+
+  function showVersion() {
+    var node = $('#versionLine');
+    if (!node) return;
+    node.textContent = 'Version ' + VERSION + ' · ' + RELEASED +
+      (global.navigator && global.navigator.serviceWorker &&
+        global.navigator.serviceWorker.controller ? ' · saved for offline' : '');
+  }
+
   function boot() {
     cache();
     FX.init($('#fx'));
+    showVersion();
 
     var saved = ScoreLib.loadPrefs();
     if (saved && saved.theme) App.prefs = Object.assign(App.prefs, saved);
@@ -906,6 +941,8 @@
   else boot();
 
   global.SC.App = App;
+  App.VERSION = VERSION;
+  App.onUpdateReady = onUpdateReady;
   App.startGame = startGame;
   App.tryMove = tryMove;
 })(typeof window !== 'undefined' ? window : self);

@@ -1637,3 +1637,11 @@ body[data-screen="game"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+.version-line {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
