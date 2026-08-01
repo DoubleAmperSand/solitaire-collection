@@ -374,11 +374,15 @@
       if (!hit) return;
       startPoint = {
         x: ev.clientX, y: ev.clientY, hit: hit, moved: false,
-        time: Date.now()
+        pointerId: ev.pointerId, time: Date.now()
       };
       var pile = View.table.pile(hit.pileId);
       if (pile && pile.type !== 'stock' && hit.index >= 0 && View.table.grab(hit.pileId, hit.index)) {
         startPoint.canDrag = true;
+        // Touching a card is a game gesture, never a page gesture. The CSS
+        // touch-action does the real work; this covers older WebKit.
+        if (ev.cancelable) ev.preventDefault();
+        try { View.root.setPointerCapture(ev.pointerId); } catch (e) { /* not supported */ }
       }
     });
 
@@ -397,15 +401,24 @@
       if (!startPoint) return;
       var sp = startPoint;
       startPoint = null;
+      releaseCapture(sp.pointerId);
       if (View.locked) { View.cancelDrag(); return; }
       if (sp.moved) View.dropDrag(ev);
       else View.handleTap(sp.hit);
     });
 
-    global.addEventListener('pointercancel', function () {
+    global.addEventListener('pointercancel', function (ev) {
+      if (startPoint) releaseCapture(startPoint.pointerId);
       startPoint = null;
       View.cancelDrag();
     });
+
+    function releaseCapture(pointerId) {
+      if (pointerId === undefined) return;
+      try {
+        if (View.root.hasPointerCapture(pointerId)) View.root.releasePointerCapture(pointerId);
+      } catch (e) { /* not supported */ }
+    }
   };
 
   View.handleTap = function (hit) {

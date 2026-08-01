@@ -175,6 +175,7 @@
 html,
 body {
   height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
@@ -184,8 +185,16 @@ body {
   background: linear-gradient(170deg, var(--bg-a) 0%, var(--bg-b) 100%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* While a game is open the page itself never scrolls — the felt is the only
+   scroller — so there is nothing for pull-to-refresh to grab. */
+body[data-screen="game"] {
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  width: 100%;
 }
 
 .sr-only {
@@ -594,6 +603,10 @@ body {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* the felt may be scrolled vertically, but a swipe here must never chain
+     out to the page and trigger pull-to-refresh */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   /* contain the cards' stacking order so nothing can rise above a dialog */
   isolation: isolate;
   z-index: 0;
@@ -715,6 +728,12 @@ body {
   cursor: default;
   transition: transform 0.26s cubic-bezier(.2, .8, .3, 1);
   will-change: transform;
+  /* a touch that starts on a card is ours: no scrolling, no pull-to-refresh,
+     no text selection and no long-press callout */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .card.playable {
