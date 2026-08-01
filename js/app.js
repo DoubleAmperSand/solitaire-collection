@@ -453,7 +453,10 @@
     var moves = App.table.hints();
     if (!moves.length) {
       Snd.play('deny');
-      toast('No moves available');
+      var stock = App.table.pilesOfType('stock')[0];
+      toast(stock && stock.cards.length
+        ? 'Nothing on the table — turn the stock over'
+        : 'No move here gets you any further');
       return;
     }
 

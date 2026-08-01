@@ -92,6 +92,26 @@
       return top.faceUp && top.rank === cards[0].rank + 1;
     },
 
+    /**
+     * Spider lets a run sit on any card one rank higher, so most moves only
+     * shuffle cards between equally good hosts. What counts as progress is
+     * turning a card over, clearing a column, or gathering a run onto its own
+     * suit — everything else is rearrangement.
+     */
+    progresses: function (table, move, from, to) {
+      if (from.type !== 'tableau' || to.type !== 'tableau') return undefined;
+      var under = from.cards[move.index - 1];
+      if (move.index > 0 && under && !under.faceUp) return true;
+      if (move.index === 0) return !to.isEmpty();
+
+      var moving = from.cards[move.index];
+      var top = to.top();
+      if (!top || top.suit !== moving.suit) return false;
+      // gathering onto its own suit only counts if it was not on its own suit
+      // already — otherwise a run hops between two identical hosts for ever
+      return !(under && under.faceUp && under.suit === moving.suit);
+    },
+
     afterMove: function (table, fromPile, toPile) {
       var events = [];
       if (fromPile.type === 'tableau') {

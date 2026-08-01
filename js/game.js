@@ -306,10 +306,124 @@
     return moves;
   };
 
+  /* -------------------------------------------------- progress vs shuffle */
+
+  /*
+   * Being legal and getting somewhere are different things. A card can very
+   * nearly always slide onto some other card that would take it just as well,
+   * and then slide straight back — legal, endless, and worth nothing. Telling
+   * the two apart is what stops the hints going round in circles and lets a
+   * finished game admit that it is finished.
+   */
+
+  /** Does this move actually get somewhere? */
+  Table.prototype.progresses = function (move) {
+    var from = this.byId[move.from], to = this.byId[move.to];
+    if (!from || !to) return false;
+
+    if (this.variant.progresses) {
+      var say = this.variant.progresses(this, move, from, to);
+      if (say !== undefined) return say;
+    }
+
+    // order matters: a card already home that shuffles between two empty
+    // foundations is not being sent home again
+    if (from.type === 'foundation') return false;     // pulling one back out
+    if (to.type === 'foundation') return true;        // a card sent home
+    if (to.type === 'cell') return false;             // parking it, not playing it
+    if (from.type === 'cell' || from.type === 'waste' || from.type === 'reserve') return true;
+
+    if (from.type === 'tableau') {
+      var under = from.cards[move.index - 1];
+      if (move.index > 0 && under && !under.faceUp) return true;   // turns a card over
+      // empties a column — unless it only moves the empty column elsewhere
+      if (move.index === 0) return !to.isEmpty();
+    }
+    return false;
+  };
+
   /**
-   * Every worthwhile move, best first: foundations, then reveals, then the
-   * rest. Returned as a list so asking again can show the next idea instead
-   * of repeating the first one.
+   * Moving onto a host no better than the one just left. This is the move
+   * that comes back to haunt you: it is always available, it undoes itself,
+   * and it is the reason counting legal moves says a dead game is alive.
+   */
+  Table.prototype.isLateral = function (move) {
+    var from = this.byId[move.from], to = this.byId[move.to];
+    if (!from || !to || from.type !== 'tableau' || to.type !== 'tableau') return false;
+    if (move.index === 0) return false;               // empties or relocates a column
+    var under = from.cards[move.index - 1];
+    if (!under || !under.faceUp) return false;        // turns a card over
+    var host = to.top();
+    if (!host) return false;                          // taking a gap is a real choice
+    if (host.rank !== under.rank) return false;
+    // landing on your own suit beats landing on a stranger of the same rank
+    var moving = from.cards[move.index];
+    if (host.suit === moving.suit && under.suit !== moving.suit) return false;
+    return true;
+  };
+
+  /**
+   * Would this move put a progressing move within reach next turn?
+   *
+   * Putting the same cards straight back does not count. Undoing a move
+   * often looks like progress on its own terms — it re-empties the column
+   * you just filled, or frees the cell you just used — and taking that at
+   * face value is exactly how a hint ends up recommending a move and then
+   * recommending its reverse.
+   */
+  Table.prototype.opensProgress = function (move) {
+    var self = this;
+    var count = move.count || 1;
+    return this.peek(move, function () {
+      var landed = self.byId[move.to].cards.length - count;
+      return self.legalMoves().some(function (m) {
+        if (m.from === move.to && m.to === move.from && m.index === landed) return false;
+        return self.progresses(m);
+      });
+    });
+  };
+
+  /** Play a move, ask a question, then put everything back exactly as it was. */
+  Table.prototype.peek = function (move, ask) {
+    var before = this.snapshot();
+    var depth = this.history.length;
+    var moves = this.stats.moves, won = this.won;
+    var result = this.move(move.from, move.index, move.to);
+    var answer = result.ok ? ask() : false;
+    this.history.length = depth;
+    this.restore(before);
+    this.stats.moves = moves;
+    this.won = won;
+    return answer;
+  };
+
+  /** Every position this game has already been in, including the current one. */
+  Table.prototype.visitedStates = function () {
+    var seen = {};
+    for (var i = 0; i < this.history.length; i++) {
+      seen[stateKey(this.history[i].state)] = 1;
+    }
+    seen[stateKey(this.snapshot())] = 1;
+    return seen;
+  };
+
+  /** Where this move would leave the board, as a comparable key. */
+  Table.prototype.resultKey = function (move) {
+    var self = this;
+    return this.peek(move, function () { return stateKey(self.snapshot()); }) || '';
+  };
+
+  /**
+   * Every worthwhile move, best first, so asking again shows the next idea
+   * rather than repeating the first.
+   *
+   * The ranking leads on whether a move takes the game somewhere it has not
+   * already been. Judging a move only on its own merits is what produced the
+   * advice to shuffle a card back and forth: emptying a column and filling it
+   * again are each progress on their own terms, and so are taking a card out
+   * of a cell and putting it back. Against the positions already played they
+   * are plainly a circle, and the board has kept every one of them for undo,
+   * so the answer was already there to be asked for.
    */
   Table.prototype.hints = function () {
     if (this.variant.hints) return this.variant.hints(this) || [];
@@ -317,11 +431,38 @@
       var single = this.variant.hint(this);
       return single ? [single] : [];
     }
-    var moves = this.legalMoves();
+
     var self = this;
-    moves.sort(function (a, b) { return self.hintScore(b) - self.hintScore(a); });
-    // shuffling a card between two empty columns is legal and pointless
-    return moves.filter(function (m) { return self.hintScore(m) > -100; });
+    var visited = this.visitedStates();
+
+    var ranked = this.legalMoves().filter(function (m) {
+      // taking a card back off a foundation is never advice worth giving —
+      // including sliding one between two empty foundations, which is legal
+      // and achieves nothing at all
+      if (self.byId[m.from].type === 'foundation') return false;
+      // nor is moving onto a host no better than the one just left
+      return !self.isLateral(m);
+    }).filter(function (m) {
+      // never advise a move back into a position this game has already been
+      // in: that is the circle, however sensible the single move looks
+      return !visited[self.resultKey(m)];
+    }).map(function (m) {
+      var progress = self.progresses(m);
+      return {
+        move: m,
+        score: self.hintScore(m),
+        progress: progress,
+        opens: progress ? true : self.opensProgress(m)
+      };
+    });
+
+    ranked.sort(function (a, b) {
+      if (a.progress !== b.progress) return a.progress ? -1 : 1; // gets somewhere
+      if (!!a.opens !== !!b.opens) return a.opens ? -1 : 1;      // opens something up
+      return b.score - a.score;
+    });
+
+    return ranked.map(function (r) { return r.move; });
   };
 
   Table.prototype.hint = function () {
@@ -380,7 +521,7 @@
     return this.autoFinishMove() !== null;
   };
 
-  /** No legal move, no card left to draw and nothing left to recycle. */
+  /** Nothing to draw, nothing to recycle, and nowhere left to get to. */
   Table.prototype.isStuck = function () {
     if (this.won) return false;
     var stock = this.pilesOfType('stock')[0];
@@ -393,7 +534,69 @@
       if (result && result.ok) return false;
     }
     if (this.variant.canRecycle && this.variant.canRecycle(this)) return false;
-    return this.legalMoves().length === 0;
+    return this.deadEnd(2500);
+  };
+
+  function stateKey(state) {
+    var parts = [];
+    for (var i = 0; i < state.piles.length; i++) parts.push(state.piles[i].join(''));
+    return parts.join('/');
+  }
+
+  /**
+   * True when no amount of rearranging what is already face up reaches a move
+   * that gets somewhere.
+   *
+   * Counting legal moves cannot answer this. Spider in particular nearly
+   * always leaves a card that can slide onto an equally good host and back
+   * again, so a game that is plainly over goes on offering moves for ever.
+   * Instead, walk the positions those pointless shuffles lead to and look for
+   * a way out.
+   *
+   * If the walk runs out of budget before it runs out of positions the honest
+   * answer is "don't know", and the player gets the benefit of the doubt:
+   * ending a game that was still alive is far worse than letting a dead one
+   * run on a little longer.
+   */
+  Table.prototype.deadEnd = function (budget) {
+    var start = this.snapshot();
+    var depth = this.history.length;
+    var moves = this.stats.moves, undos = this.stats.undos, won = this.won;
+
+    var seen = {};
+    var queue = [start];
+    seen[stateKey(start)] = 1;
+    var visited = 0, alive = false, exhausted = true;
+
+    while (queue.length) {
+      if (visited >= budget) { exhausted = false; break; }
+      var state = queue.shift();
+      this.restore(state);
+      visited++;
+
+      var options = this.legalMoves();
+      var i;
+      for (i = 0; i < options.length && !alive; i++) {
+        if (this.progresses(options[i])) alive = true;
+      }
+      if (alive) break;
+
+      for (i = 0; i < options.length; i++) {
+        this.restore(state);
+        if (!this.move(options[i].from, options[i].index, options[i].to).ok) continue;
+        var next = this.snapshot();
+        var key = stateKey(next);
+        if (!seen[key]) { seen[key] = 1; queue.push(next); }
+      }
+    }
+
+    this.history.length = depth;
+    this.restore(start);
+    this.stats.moves = moves;
+    this.stats.undos = undos;
+    this.won = won;
+
+    return !alive && exhausted;
   };
 
   /** Sanity check used by the tests: every card accounted for exactly once. */
