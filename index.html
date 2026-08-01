@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0e1317">
+  <meta name="description" content="A collection of solitaire games — Klondike, Spider, FreeCell and Pyramid — with difficulty levels, streak scoring and a light or dark card room.">
+  <title>Solitaire Collection</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🂡</text></svg>">
+</head>
+
+<body data-screen="home">
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <!-- ------------------------------------------------------------- home -->
+  <section class="screen home" id="home">
+    <header class="home-head">
+      <div class="wordmark">
+        <span class="suits" aria-hidden="true"><i>♠</i><i>♥</i><i>♦</i><i>♣</i></span>
+        <h1>Solitaire<span>Collection</span></h1>
+      </div>
+      <button class="icon-btn" id="btnSettingsHome" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2" />
+          <path d="M12 2.6l1.3 2.6 2.9-.6.4 2.9 2.6 1.3-1.6 2.4 1.6 2.4-2.6 1.3-.4 2.9-2.9-.6L12 21.4l-1.3-2.6-2.9.6-.4-2.9-2.6-1.3L6.4 12 4.8 9.6l2.6-1.3.4-2.9 2.9.6z" />
+        </svg>
+        <span class="sr-only">Settings</span>
+      </button>
+    </header>
+
+    <p class="home-intro">Four games, three difficulties each. Every deal is numbered, so a good one can be played again.</p>
+
+    <div class="game-grid" id="gameGrid"></div>
+
+    <footer class="home-foot">
+      <p>Scores, streaks and settings are kept on this device.</p>
+    </footer>
+  </section>
+
+  <!-- ------------------------------------------------------------- game -->
+  <section class="screen game" id="game" hidden>
+    <header class="game-head">
+      <button class="icon-btn ghost" id="btnBack" title="Back to the collection">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" />
+        </svg>
+        <span class="sr-only">Back</span>
+      </button>
+
+      <div class="head-titles">
+        <h2 id="gameTitle">Klondike</h2>
+        <p id="dealLabel">Deal #0</p>
+      </div>
+
+      <div class="hud">
+        <div class="hud-chip">
+          <span class="label">Score</span><strong id="scoreValue">0</strong>
+        </div>
+        <div class="hud-chip" id="comboChip">
+          <span class="label">Streak</span><strong id="comboValue">×1</strong>
+        </div>
+        <div class="hud-chip ghost">
+          <span class="label">Time</span><strong id="timeValue">0:00</strong>
+        </div>
+      </div>
+
+      <div class="head-actions">
+        <button class="icon-btn" id="btnSound" title="Sound" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 9v6h4l5 4V5L8 9H4z" />
+            <path class="wave" d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12" />
+          </svg>
+          <span class="sr-only">Toggle sound</span>
+        </button>
+        <button class="icon-btn" id="btnSettings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M12 2.6l1.3 2.6 2.9-.6.4 2.9 2.6 1.3-1.6 2.4 1.6 2.4-2.6 1.3-.4 2.9-2.9-.6L12 21.4l-1.3-2.6-2.9.6-.4-2.9-2.6-1.3L6.4 12 4.8 9.6l2.6-1.3.4-2.9 2.9.6z" />
+          </svg>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </header>
+
+    <p class="game-status" id="gameStatus"></p>
+
+    <div class="table-wrap" id="tableWrap">
+      <div class="table" id="table"></div>
+      <div class="floats" id="floats"></div>
+    </div>
+
+    <nav class="dock">
+      <button class="dock-btn" id="btnNewDeal">
+        <span class="dock-icon" aria-hidden="true">🂠</span><span>New deal</span>
+      </button>
+      <button class="dock-btn" id="btnUndo">
+        <span class="dock-icon" aria-hidden="true">↺</span><span>Undo</span>
+      </button>
+      <button class="dock-btn" id="btnHint">
+        <span class="dock-icon" aria-hidden="true">?</span><span>Hint</span>
+      </button>
+      <button class="dock-btn" id="btnLevels">
+        <span class="dock-icon" aria-hidden="true">⚙</span><span>Level</span>
+      </button>
+      <button class="dock-btn" id="btnRules">
+        <span class="dock-icon" aria-hidden="true">i</span><span>Rules</span>
+      </button>
+      <button class="dock-btn accent" id="btnAuto" hidden>
+        <span class="dock-icon" aria-hidden="true">▸▸</span><span>Finish</span>
+      </button>
+    </nav>
+  </section>
+
+  <div class="toasts" id="toasts"></div>
+
+  <!-- ----------------------------------------------------------- modals -->
+  <div class="modal" id="difficultyModal" hidden>
+    <div class="modal-card">
+      <h2 class="modal-title" id="difficultyTitle">Klondike</h2>
+      <p class="modal-sub" id="difficultySub"></p>
+      <div class="levels" id="difficultyList"></div>
+      <div class="modal-actions">
+        <button class="btn" data-close="difficultyModal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="resultModal" hidden>
+    <div class="modal-card">
+      <h2 class="result-title win" id="resultTitle">Solved!</h2>
+      <p class="modal-sub" id="resultSub"></p>
+      <div class="stats" id="resultStats"></div>
+      <ul class="breakdown" id="resultBreakdown"></ul>
+      <p class="placement" id="resultPlacement"></p>
+      <h3 class="mini-head">Best on this level</h3>
+      <ol class="score-list" id="resultScores"></ol>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnResultRetry">New deal</button>
+        <button class="btn" id="btnResultSame">Replay this deal</button>
+        <button class="btn subtle" id="btnResultHome">Collection</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modal-card">
+      <h2 class="modal-title">Settings</h2>
+
+      <div class="setting">
+        <div class="setting-text"><strong>Theme</strong><em>Match your device, or pick one</em></div>
+        <div class="segmented" role="group" aria-label="Theme">
+          <button class="seg-btn" data-theme="auto">Auto</button>
+          <button class="seg-btn" data-theme="light">Light</button>
+          <button class="seg-btn" data-theme="dark">Dark</button>
+        </div>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="optSound" checked>
+        <span class="track"></span>
+        <span class="switch-text"><strong>Sound</strong><em>Card shuffles, chimes and fanfares</em></span>
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" id="optEffects" checked>
+        <span class="track"></span>
+        <span class="switch-text"><strong>Effects</strong><em>Sparkles and the winning card shower</em></span>
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn primary" data-close="settingsModal">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="rulesModal" hidden>
+    <div class="modal-card">
+      <h2 class="modal-title" id="rulesTitle">How to play</h2>
+      <div class="prose" id="rulesBody"></div>
+      <div class="prose scoring">
+        <h3 class="mini-head">Scoring</h3>
+        <p>Cards home and cards revealed pay points, and each productive move in a row raises your
+          streak up to ×3. Undo, hints and redeals cost points and reset it. Finishing quickly, in
+          few moves, and without help all pay a bonus. Harder levels multiply everything.</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" data-close="rulesModal">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/cards.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/rules/klondike.js"></script>
+  <script src="js/rules/spider.js"></script>
+  <script src="js/rules/freecell.js"></script>
+  <script src="js/rules/pyramid.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/view.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
