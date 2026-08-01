@@ -38,11 +38,13 @@
       </button>
     </header>
 
-    <p class="home-intro">Four games, three difficulties each. Every deal is numbered, so a good one can be played again.</p>
+    <p class="home-intro">Four games, three difficulties each. Klondike and FreeCell can be dealt from one, two or four
+      suits. Every deal is numbered, so a good one can be played again.</p>
 
     <div class="game-grid" id="gameGrid"></div>
 
     <footer class="home-foot">
+      <button class="btn subtle" id="btnStats">Statistics</button>
       <p>Scores, streaks and settings are kept on this device.</p>
     </footer>
   </section>
@@ -70,11 +72,22 @@
           <span class="label">Streak</span><strong id="comboValue">×1</strong>
         </div>
         <div class="hud-chip ghost">
+          <span class="label">Moves</span><strong id="moveValue">0</strong>
+        </div>
+        <div class="hud-chip ghost">
           <span class="label">Time</span><strong id="timeValue">0:00</strong>
         </div>
       </div>
 
       <div class="head-actions">
+        <button class="icon-btn" id="btnRules" title="How to play">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 10.5v6" />
+            <path d="M12 7.4v.1" />
+          </svg>
+          <span class="sr-only">How to play</span>
+        </button>
         <button class="icon-btn" id="btnSound" title="Sound" aria-pressed="true">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 9v6h4l5 4V5L8 9H4z" />
@@ -103,6 +116,9 @@
       <button class="dock-btn" id="btnNewDeal">
         <span class="dock-icon" aria-hidden="true">🂠</span><span>New deal</span>
       </button>
+      <button class="dock-btn" id="btnRestart">
+        <span class="dock-icon" aria-hidden="true">⟳</span><span>Restart</span>
+      </button>
       <button class="dock-btn" id="btnUndo">
         <span class="dock-icon" aria-hidden="true">↺</span><span>Undo</span>
       </button>
@@ -111,9 +127,6 @@
       </button>
       <button class="dock-btn" id="btnLevels">
         <span class="dock-icon" aria-hidden="true">⚙</span><span>Level</span>
-      </button>
-      <button class="dock-btn" id="btnRules">
-        <span class="dock-icon" aria-hidden="true">i</span><span>Rules</span>
       </button>
       <button class="dock-btn accent" id="btnAuto" hidden>
         <span class="dock-icon" aria-hidden="true">▸▸</span><span>Finish</span>
@@ -128,6 +141,8 @@
     <div class="modal-card">
       <h2 class="modal-title" id="difficultyTitle">Klondike</h2>
       <p class="modal-sub" id="difficultySub"></p>
+      <div class="options" id="difficultyOptions" hidden></div>
+      <h3 class="mini-head">Difficulty</h3>
       <div class="levels" id="difficultyList"></div>
       <div class="modal-actions">
         <button class="btn" data-close="difficultyModal">Cancel</button>
@@ -142,6 +157,7 @@
       <div class="stats" id="resultStats"></div>
       <ul class="breakdown" id="resultBreakdown"></ul>
       <p class="placement" id="resultPlacement"></p>
+      <p class="streak-line" id="resultStreak"></p>
       <h3 class="mini-head">Best on this level</h3>
       <ol class="score-list" id="resultScores"></ol>
       <div class="modal-actions">
@@ -177,8 +193,28 @@
         <span class="switch-text"><strong>Effects</strong><em>Sparkles and the winning card shower</em></span>
       </label>
 
+      <label class="switch">
+        <input type="checkbox" id="optAutoFinish" checked>
+        <span class="track"></span>
+        <span class="switch-text"><strong>Finish automatically</strong><em>Send the cards home once the game is
+            decided</em></span>
+      </label>
+
       <div class="modal-actions">
         <button class="btn primary" data-close="settingsModal">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="statsModal" hidden>
+    <div class="modal-card">
+      <h2 class="modal-title">Statistics</h2>
+      <p class="modal-sub">Every finished game counts. Walking away from one you have started counts as a loss.</p>
+      <div class="stats" id="statsOverall"></div>
+      <div class="stat-groups" id="statsBody"></div>
+      <div class="modal-actions">
+        <button class="btn primary" data-close="statsModal">Done</button>
+        <button class="btn subtle danger" id="btnClearStats">Reset everything</button>
       </div>
     </div>
   </div>

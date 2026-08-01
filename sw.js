@@ -8,7 +8,7 @@
  * Bump CACHE whenever a file below changes — the new worker installs a fresh
  * cache, deletes the old one, and takes over.
  */
-var CACHE = 'solitaire-collection-v1';
+var CACHE = 'solitaire-collection-v2';
 
 var ASSETS = [
   './',

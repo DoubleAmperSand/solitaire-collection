@@ -7,13 +7,29 @@
 
   var Cards = global.SC.Cards;
 
-  function descendingAlternating(cards) {
+  /**
+   * Whether `upper` may sit on `lower`. Normally descending in alternating
+   * colours — but a one-suit deck has no colours to alternate, so rank
+   * alone decides.
+   */
+  function stacks(config, lower, upper) {
+    if (lower.rank !== upper.rank + 1) return false;
+    if ((config.suits || 4) === 1) return true;
+    return Cards.isRed(lower.suit) !== Cards.isRed(upper.suit);
+  }
+
+  function isRun(config, cards) {
     for (var i = 1; i < cards.length; i++) {
-      var prev = cards[i - 1], cur = cards[i];
-      if (prev.rank !== cur.rank + 1) return false;
-      if (Cards.isRed(prev.suit) === Cards.isRed(cur.suit)) return false;
+      if (!stacks(config, cards[i - 1], cards[i])) return false;
     }
     return true;
+  }
+
+  /* Always 52 cards; the thinner decks just repeat the suits they do use. */
+  function deckFor(suitCount) {
+    if (suitCount === 1) return Cards.buildDeck(4, [Cards.SPADES]);
+    if (suitCount === 2) return Cards.buildDeck(2, [Cards.SPADES, Cards.HEARTS]);
+    return Cards.buildDeck(1, Cards.SUITS);
   }
 
   /**
@@ -34,6 +50,27 @@
     name: 'FreeCell',
     blurb: 'No hidden cards. Pure calculation.',
     mode: 'stack',
+
+    options: [{
+      id: 'suits',
+      name: 'Suits',
+      blurb: 'Fewer suits means more places every card will go.',
+      default: 4,
+      choices: [
+        {
+          value: 1, name: 'One suit', short: '1 suit', multiplier: 0.5,
+          blurb: 'Spades only. Rank alone decides what stacks.'
+        },
+        {
+          value: 2, name: 'Two suits', short: '2 suits', multiplier: 0.75,
+          blurb: 'Spades and hearts, twice over. Colours still alternate.'
+        },
+        {
+          value: 4, name: 'Four suits', short: '4 suits', multiplier: 1,
+          blurb: 'The full deck, the way it is meant to be played.'
+        }
+      ]
+    }],
 
     difficulties: [
       {
@@ -65,8 +102,8 @@
       return { grid: { cols: 8, rows: 2 }, piles: piles };
     },
 
-    deal: function (table, random) {
-      var deck = Cards.shuffle(Cards.buildDeck(1), random);
+    deal: function (table, random, config) {
+      var deck = Cards.shuffle(deckFor(config.suits), random);
       for (var i = 0; i < deck.length; i++) {
         deck[i].faceUp = true;
         table.pile('t' + (i % 8)).cards.push(deck[i]);
@@ -79,7 +116,7 @@
       }
       if (pile.type !== 'tableau') return false;
       var run = pile.from(index);
-      if (!descendingAlternating(run)) return false;
+      if (!isRun(table.config, run)) return false;
       return run.length <= maxMove(table, null);
     },
 
@@ -98,7 +135,7 @@
         if (cards.length > maxMove(table, toPile)) return false;
         var t = toPile.top();
         if (!t) return true;
-        return t.rank === first.rank + 1 && Cards.isRed(t.suit) !== Cards.isRed(first.suit);
+        return stacks(table.config, t, first);
       }
       return false;
     },
@@ -113,7 +150,9 @@
 
     status: function (table) {
       var free = table.pilesOfType('cell').filter(function (c) { return c.isEmpty(); }).length;
-      return free + ' free · move up to ' + maxMove(table, null) + ' cards';
+      var suits = table.config.suits || 4;
+      var lead = suits === 4 ? '' : (suits === 1 ? 'One suit · ' : 'Two suits · ');
+      return lead + free + ' free · move up to ' + maxMove(table, null) + ' cards';
     },
 
     maxMove: maxMove

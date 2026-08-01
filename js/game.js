@@ -34,14 +34,85 @@
   Pile.prototype.isEmpty = function () { return this.cards.length === 0; };
   Pile.prototype.from = function (index) { return this.cards.slice(index); };
 
+  /* --------------------------------------------------------------- options */
+
+  /*
+   * Beyond its difficulty a variant may expose extra axes. Klondike and
+   * FreeCell can be dealt from one, two or four suits, and that is a
+   * different question from how hard the level is — a one-suit strict
+   * Klondike is a perfectly sensible thing to want. So options are chosen
+   * independently of difficulty, and a gentler choice scales the score
+   * multiplier down rather than pretending it was the same game.
+   */
+
+  function optionSpecs(variant) { return variant.options || []; }
+
+  function choiceFor(spec, value) {
+    return spec.choices.filter(function (c) { return c.value === value; })[0] || spec.choices[0];
+  }
+
+  function defaultOptions(variant) {
+    var out = {};
+    optionSpecs(variant).forEach(function (spec) { out[spec.id] = spec.default; });
+    return out;
+  }
+
+  /** Coerce whatever the caller passed — a URL, storage — into valid choices. */
+  function normaliseOptions(variant, raw) {
+    var out = defaultOptions(variant);
+    if (!raw) return out;
+    optionSpecs(variant).forEach(function (spec) {
+      var match = spec.choices.filter(function (c) { return c.value === raw[spec.id]; })[0];
+      if (match) out[spec.id] = match.value;
+    });
+    return out;
+  }
+
+  function optionMultiplier(variant, options) {
+    var m = 1;
+    optionSpecs(variant).forEach(function (spec) {
+      m *= choiceFor(spec, options[spec.id]).multiplier;
+    });
+    return m;
+  }
+
+  /**
+   * Storage suffix separating one set of options from another, so a
+   * one-suit run never lands on the four-suit leaderboard. Defaults produce
+   * an empty string, which is what scores saved before options existed use.
+   */
+  function optionKey(variant, options) {
+    var parts = [];
+    optionSpecs(variant).forEach(function (spec) {
+      if (options[spec.id] !== spec.default) parts.push(spec.id + '=' + options[spec.id]);
+    });
+    return parts.length ? ':' + parts.join(',') : '';
+  }
+
+  /** Short label for anything non-default, e.g. 'One suit'. */
+  function optionLabel(variant, options) {
+    return optionSpecs(variant).filter(function (spec) {
+      return options[spec.id] !== spec.default;
+    }).map(function (spec) {
+      return choiceFor(spec, options[spec.id]).name;
+    }).join(' · ');
+  }
+
   /* ----------------------------------------------------------------- table */
 
-  function Table(variant, difficultyId, seed) {
+  function Table(variant, difficultyId, seed, options) {
     this.variant = variant;
     this.difficulty = variant.difficulties.filter(function (d) {
       return d.id === difficultyId;
     })[0] || variant.difficulties[0];
-    this.config = this.difficulty.config || {};
+    this.options = normaliseOptions(variant, options);
+    // options win over the difficulty's config, so an axis can override it
+    this.config = Object.assign({}, this.difficulty.config || {}, this.options);
+    this.multiplier = Math.round(
+      this.difficulty.multiplier * optionMultiplier(variant, this.options) * 100
+    ) / 100;
+    this.optionKey = optionKey(variant, this.options);
+    this.optionLabel = optionLabel(variant, this.options);
     this.seed = seed || Cards.randomSeed();
     this.reset();
   }
@@ -235,14 +306,26 @@
     return moves;
   };
 
-  /** Rank a hint: foundation moves first, then reveals, then the rest. */
-  Table.prototype.hint = function () {
-    if (this.variant.hint) return this.variant.hint(this);
+  /**
+   * Every worthwhile move, best first: foundations, then reveals, then the
+   * rest. Returned as a list so asking again can show the next idea instead
+   * of repeating the first one.
+   */
+  Table.prototype.hints = function () {
+    if (this.variant.hints) return this.variant.hints(this) || [];
+    if (this.variant.hint) {
+      var single = this.variant.hint(this);
+      return single ? [single] : [];
+    }
     var moves = this.legalMoves();
-    if (!moves.length) return null;
     var self = this;
     moves.sort(function (a, b) { return self.hintScore(b) - self.hintScore(a); });
-    return moves[0];
+    // shuffling a card between two empty columns is legal and pointless
+    return moves.filter(function (m) { return self.hintScore(m) > -100; });
+  };
+
+  Table.prototype.hint = function () {
+    return this.hints()[0] || null;
   };
 
   Table.prototype.hintScore = function (move) {
@@ -329,5 +412,10 @@
     return null;
   };
 
-  global.SC.Game = { Table: Table, Pile: Pile };
+  global.SC.Game = {
+    Table: Table, Pile: Pile,
+    optionSpecs: optionSpecs, choiceFor: choiceFor,
+    defaultOptions: defaultOptions, normaliseOptions: normaliseOptions,
+    optionMultiplier: optionMultiplier, optionKey: optionKey, optionLabel: optionLabel
+  };
 })(typeof window !== 'undefined' ? window : self);

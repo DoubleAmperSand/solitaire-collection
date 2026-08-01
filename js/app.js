@@ -23,9 +23,12 @@
     table: null,
     score: null,
     pendingVariant: null,
+    pendingOptions: {},
     timerId: null,
     finishing: false,
-    prefs: { theme: 'auto', sound: true, effects: true }
+    recorded: false,     // this game has already been counted in the stats
+    hintCycle: null,     // { at: position signature, index: which hint }
+    prefs: { theme: 'auto', sound: true, effects: true, autoFinish: true, options: {} }
   };
 
   var el = {};
@@ -41,6 +44,7 @@
     el.comboChip = $('#comboChip');
     el.comboValue = $('#comboValue');
     el.timeValue = $('#timeValue');
+    el.moveValue = $('#moveValue');
     el.gameTitle = $('#gameTitle');
     el.gameStatus = $('#gameStatus');
     el.dealLabel = $('#dealLabel');
@@ -64,9 +68,10 @@
     applyTheme();
     Snd.setEnabled(App.prefs.sound);
     FX.setEnabled(App.prefs.effects);
-    var s = $('#optSound'), e2 = $('#optEffects');
+    var s = $('#optSound'), e2 = $('#optEffects'), a = $('#optAutoFinish');
     if (s) s.checked = App.prefs.sound;
     if (e2) e2.checked = App.prefs.effects;
+    if (a) a.checked = App.prefs.autoFinish;
     var btn = $('#btnSound');
     if (btn) {
       btn.classList.toggle('is-off', !App.prefs.sound);
@@ -81,8 +86,8 @@
     el.games.innerHTML = '';
     ORDER.forEach(function (id) {
       var variant = Variants[id];
-      var best = ScoreLib.bestForVariant(id, variant.difficulties);
-      var won = ScoreLib.wins(id, variant.difficulties);
+      var best = ScoreLib.bestForVariant(id);
+      var stat = ScoreLib.variantStats(id);
       var card = document.createElement('button');
       card.className = 'game-card game-' + id;
       card.innerHTML =
@@ -92,8 +97,8 @@
         '<span class="game-blurb">' + variant.blurb + '</span>' +
         '<span class="game-stats">' +
         '<span>' + (best ? best.toLocaleString() : '—') + '<em>best</em></span>' +
-        '<span>' + won + '<em>' + (won === 1 ? 'win' : 'wins') + '</em></span>' +
-        '<span>' + variant.difficulties.length + '<em>levels</em></span>' +
+        '<span>' + stat.won + '<em>' + (stat.won === 1 ? 'win' : 'wins') + '</em></span>' +
+        '<span>' + (stat.played ? ScoreLib.winRate(stat) + '%' : '—') + '<em>win rate</em></span>' +
         '</span>' +
         '</span>';
       card.addEventListener('click', function () { openDifficulty(id); });
@@ -118,39 +123,118 @@
   function openDifficulty(variantId) {
     App.pendingVariant = variantId;
     var variant = Variants[variantId];
+    App.pendingOptions = Game.normaliseOptions(variant, (App.prefs.options || {})[variantId]);
     $('#difficultyTitle').textContent = variant.name;
     $('#difficultySub').textContent = variant.blurb;
+    renderOptions(variant);
+    renderLevels(variant);
+    openModal('#difficultyModal');
+  }
+
+  /**
+   * The axes a variant exposes beside its difficulty — Klondike and FreeCell
+   * offer one, two or four suits. Picking one re-renders the levels, because
+   * a thinner deck scales every multiplier and has its own high scores.
+   */
+  function renderOptions(variant) {
+    var wrap = $('#difficultyOptions');
+    var specs = Game.optionSpecs(variant);
+    wrap.innerHTML = '';
+    wrap.hidden = !specs.length;
+
+    specs.forEach(function (spec) {
+      var chosen = App.pendingOptions[spec.id];
+      var row = document.createElement('div');
+      row.className = 'option-row';
+
+      var head = document.createElement('div');
+      head.className = 'option-head';
+      head.innerHTML = '<strong>' + spec.name + '</strong><em>' + spec.blurb + '</em>';
+
+      var group = document.createElement('div');
+      group.className = 'segmented wide';
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', spec.name);
+
+      spec.choices.forEach(function (choice) {
+        var on = chosen === choice.value;
+        var b = document.createElement('button');
+        b.className = 'seg-btn' + (on ? ' is-on' : '');
+        b.textContent = choice.short || choice.name;
+        b.title = choice.blurb;
+        b.setAttribute('aria-pressed', String(on));
+        b.addEventListener('click', function () {
+          App.pendingOptions[spec.id] = choice.value;
+          rememberOptions(variant.id);
+          renderOptions(variant);
+          renderLevels(variant);
+          Snd.play('tap');
+        });
+        group.appendChild(b);
+      });
+
+      var note = document.createElement('p');
+      note.className = 'option-note';
+      note.textContent = Game.choiceFor(spec, chosen).blurb;
+
+      row.appendChild(head);
+      row.appendChild(group);
+      row.appendChild(note);
+      wrap.appendChild(row);
+    });
+  }
+
+  function renderLevels(variant) {
     var list = $('#difficultyList');
+    var suffix = Game.optionKey(variant, App.pendingOptions);
+    var optMult = Game.optionMultiplier(variant, App.pendingOptions);
     list.innerHTML = '';
+
     variant.difficulties.forEach(function (d) {
-      var best = ScoreLib.bestScore(variantId, d.id);
+      var best = ScoreLib.bestScore(variant.id, d.id, suffix);
+      var stat = ScoreLib.boardStats(variant.id, d.id, suffix);
+      var mult = Math.round(d.multiplier * optMult * 100) / 100;
       var btn = document.createElement('button');
       btn.className = 'level-card';
       btn.innerHTML =
         '<span class="level-name">' + d.name + '</span>' +
         '<span class="level-blurb">' + d.blurb + '</span>' +
-        '<span class="level-foot"><em>×' + d.multiplier + ' score</em>' +
-        '<em>' + (best ? 'best ' + best.toLocaleString() : 'no score yet') + '</em></span>';
+        '<span class="level-foot"><em>×' + mult + ' score</em>' +
+        '<em>' + (best ? 'best ' + best.toLocaleString() : 'no score yet') + '</em>' +
+        (stat.played ? '<em>' + stat.won + '/' + stat.played + ' won</em>' : '') +
+        '</span>';
       btn.addEventListener('click', function () {
         closeModal('#difficultyModal');
-        startGame(variantId, d.id);
+        startGame(variant.id, d.id, undefined, App.pendingOptions);
       });
       list.appendChild(btn);
     });
-    openModal('#difficultyModal');
+  }
+
+  function rememberOptions(variantId) {
+    App.prefs.options = App.prefs.options || {};
+    App.prefs.options[variantId] = Object.assign({}, App.pendingOptions);
+    ScoreLib.savePrefs(App.prefs);
   }
 
   /* ----------------------------------------------------------------- game */
 
-  function startGame(variantId, difficultyId, seed) {
+  function startGame(variantId, difficultyId, seed, options) {
+    recordAbandon();
     App.variant = Variants[variantId];
-    App.table = new Game.Table(App.variant, difficultyId, seed || Cards.randomSeed());
-    App.score = new ScoreLib.Score(App.table.difficulty.multiplier);
+    App.table = new Game.Table(
+      App.variant, difficultyId, seed || Cards.randomSeed(),
+      options || (App.prefs.options || {})[variantId]
+    );
+    App.score = new ScoreLib.Score(App.table.multiplier);
     App.finishing = false;
+    App.recorded = false;
+    App.hintCycle = null;
 
     showScreen('game');
     el.gameTitle.textContent = App.variant.name;
-    el.dealLabel.textContent = 'Deal #' + App.table.seed + ' · ' + App.table.difficulty.name;
+    el.dealLabel.textContent = 'Deal #' + App.table.seed + ' · ' + App.table.difficulty.name +
+      (App.table.optionLabel ? ' · ' + App.table.optionLabel : '');
 
     View.setTable(App.table);
     View.setLocked(false);
@@ -200,6 +284,7 @@
     var combo = App.score.combo();
     el.comboValue.textContent = '×' + (Math.round(combo * 100) / 100);
     el.comboChip.classList.toggle('is-hot', App.score.streak >= 2);
+    if (el.moveValue) el.moveValue.textContent = App.table.stats.moves;
     el.gameStatus.textContent = App.variant.status ? App.variant.status(App.table) : '';
     el.btnUndo.disabled = !App.table.canUndo();
     var canAuto = App.table.canAutoFinish();
@@ -336,6 +421,15 @@
     var won = events && events.some(function (e) { return e.type === 'win'; });
     if (won) return finishGame();
     if (App.table.isStuck()) return showStuck();
+    // once nothing is hidden and every card has a home, dealing them out one
+    // at a time is busywork — offer to do it, or just do it
+    if (App.prefs.autoFinish && !App.finishing && App.table.canAutoFinish()) {
+      setTimeout(function () {
+        if (App.table && !App.table.won && !App.finishing && App.table.canAutoFinish()) {
+          autoFinish();
+        }
+      }, 380);
+    }
   }
 
   function undo() {
@@ -348,18 +442,41 @@
     updateHud();
   }
 
+  /**
+   * Show the best move, and on a second ask from the same position show the
+   * next one rather than repeating. Only the first hint of a position costs
+   * points — looking through the alternatives you were already paying for
+   * shouldn't be taxed again.
+   */
   function hint() {
     if (App.table.won) return;
-    var move = App.table.hint();
-    if (!move) {
+    var moves = App.table.hints();
+    if (!moves.length) {
       Snd.play('deny');
       toast('No moves available');
       return;
     }
-    App.score.onHint();
+
+    var here = App.table.stats.moves + '/' + App.table.stats.undos;
+    if (!App.hintCycle || App.hintCycle.at !== here) {
+      App.hintCycle = { at: here, index: 0 };
+      App.score.onHint();
+    } else {
+      App.hintCycle.index = (App.hintCycle.index + 1) % moves.length;
+    }
+
     Snd.play('hint');
-    View.hintFlash(move);
+    View.hintFlash(moves[App.hintCycle.index]);
+    if (moves.length > 1) {
+      toast('Hint ' + (App.hintCycle.index + 1) + ' of ' + moves.length);
+    }
     updateHud();
+  }
+
+  /** Same deal, same level, from the top. */
+  function restartDeal() {
+    if (!App.variant || !App.table) return;
+    startGame(App.variant.id, App.table.difficulty.id, App.table.seed, App.table.options);
   }
 
   /** Send everything home once the outcome is no longer in doubt. */
@@ -391,27 +508,52 @@
 
   /* ------------------------------------------------------------- endgames */
 
-  function finishGame() {
-    stopTimer();
-    View.setLocked(true);
-    var awards = App.score.onWin();
-    updateHud();
-    Snd.play('win');
-    FX.celebrate(2800);
-
+  /**
+   * Record a finished game once, in both the high-score table and the
+   * lifetime stats. Guarded by App.recorded so a win can never be counted
+   * twice, and so abandoning an already-finished game counts nothing.
+   */
+  function record(won) {
+    if (App.recorded || !App.table || !App.score) return -1;
+    App.recorded = true;
     var entry = {
       score: App.score.total,
       date: new Date().toISOString().slice(0, 10),
-      won: true,
+      won: won,
       time: App.score.elapsed(),
       moves: App.table.stats.moves,
       seed: App.table.seed
     };
-    var placement = ScoreLib.submitScore(App.variant.id, App.table.difficulty.id, entry);
+    var suffix = App.table.optionKey;
+    ScoreLib.recordResult(App.variant.id, App.table.difficulty.id, suffix, entry);
+    return ScoreLib.submitScore(App.variant.id, App.table.difficulty.id, suffix, entry);
+  }
+
+  /**
+   * Walking away from a game in progress is a loss — otherwise a win rate
+   * only ever counts the deals that went well. Untouched deals don't count:
+   * opening a game and changing your mind isn't playing it.
+   */
+  function recordAbandon() {
+    if (!App.table || App.recorded || App.table.won) return;
+    if (!App.table.stats.moves) return;
+    record(false);
+  }
+
+  function finishGame() {
+    stopTimer();
+    View.setLocked(true);
+    var awards = App.score.onWin(App.table.stats.moves);
+    updateHud();
+    Snd.play('win');
+    FX.celebrate(2800);
+
+    var placement = record(true);
 
     $('#resultTitle').textContent = 'Solved!';
     $('#resultTitle').className = 'result-title win';
     $('#resultSub').textContent = App.variant.name + ' · ' + App.table.difficulty.name +
+      (App.table.optionLabel ? ' · ' + App.table.optionLabel : '') +
       ' · deal #' + App.table.seed;
     $('#resultStats').innerHTML = [
       stat('Score', App.score.total.toLocaleString()),
@@ -426,7 +568,8 @@
     }).join('');
     $('#resultPlacement').textContent = placement === 0 ? 'A new personal best!'
       : placement > 0 ? 'Number ' + (placement + 1) + ' on this table.' : '';
-    renderScoreTable('#resultScores', App.variant.id, App.table.difficulty.id);
+    renderScoreTable('#resultScores', App.variant.id, App.table.difficulty.id, App.table.optionKey);
+    renderResultStreak();
     $('#btnResultRetry').textContent = 'New deal';
     setTimeout(function () { openModal('#resultModal'); }, 900);
   }
@@ -434,15 +577,7 @@
   function showStuck() {
     stopTimer();
     Snd.play('stuck');
-    var entry = {
-      score: App.score.total,
-      date: new Date().toISOString().slice(0, 10),
-      won: false,
-      time: App.score.elapsed(),
-      moves: App.table.stats.moves,
-      seed: App.table.seed
-    };
-    ScoreLib.submitScore(App.variant.id, App.table.difficulty.id, entry);
+    record(false);
 
     $('#resultTitle').textContent = 'No moves left';
     $('#resultTitle').className = 'result-title stuck';
@@ -455,17 +590,30 @@
     ].join('');
     $('#resultBreakdown').innerHTML = '';
     $('#resultPlacement').textContent = '';
-    renderScoreTable('#resultScores', App.variant.id, App.table.difficulty.id);
+    renderScoreTable('#resultScores', App.variant.id, App.table.difficulty.id, App.table.optionKey);
+    renderResultStreak();
     $('#btnResultRetry').textContent = 'New deal';
     openModal('#resultModal');
+  }
+
+  /** A line under the result telling you how this board is going overall. */
+  function renderResultStreak() {
+    var node = $('#resultStreak');
+    if (!node) return;
+    var s = ScoreLib.boardStats(App.variant.id, App.table.difficulty.id, App.table.optionKey);
+    if (!s.played) { node.textContent = ''; return; }
+    var parts = [s.won + ' of ' + s.played + ' won on this board (' + ScoreLib.winRate(s) + '%)'];
+    if (s.streak > 1) parts.push(s.streak + ' in a row');
+    else if (s.bestStreak > 1) parts.push('best run ' + s.bestStreak);
+    node.textContent = parts.join(' · ');
   }
 
   function stat(label, value) {
     return '<div class="stat"><span>' + label + '</span><strong>' + value + '</strong></div>';
   }
 
-  function renderScoreTable(sel, variantId, difficultyId) {
-    var list = ScoreLib.highScores(variantId, difficultyId);
+  function renderScoreTable(sel, variantId, difficultyId, suffix) {
+    var list = ScoreLib.highScores(variantId, difficultyId, suffix);
     var node = $(sel);
     if (!node) return;
     if (!list.length) { node.innerHTML = '<li class="empty">No scores yet.</li>'; return; }
@@ -474,6 +622,87 @@
         '<span class="pts">' + s.score.toLocaleString() + '</span>' +
         '<span class="meta">' + (s.won ? 'solved' : 'stuck') + ' · ' + formatTime(s.time || 0) + '</span></li>';
     }).join('');
+  }
+
+  /* ---------------------------------------------------------------- stats */
+
+  function longTime(sec) {
+    if (!sec) return '—';
+    var h = Math.floor(sec / 3600);
+    return h ? h + 'h ' + Math.floor((sec % 3600) / 60) + 'm' : formatTime(sec);
+  }
+
+  function showStats() {
+    var all = ScoreLib.overallStats();
+    $('#statsOverall').innerHTML = [
+      stat('Played', all.played),
+      stat('Won', all.won),
+      stat('Win rate', ScoreLib.winRate(all) + '%'),
+      stat('Streak', all.streak),
+      stat('Best streak', all.bestStreak),
+      stat('Time played', longTime(all.totalTime))
+    ].join('');
+
+    var body = $('#statsBody');
+    body.innerHTML = '';
+
+    ORDER.forEach(function (id) {
+      var variant = Variants[id];
+      var vs = ScoreLib.variantStats(id);
+      var section = document.createElement('section');
+      section.className = 'stat-group' + (vs.played ? '' : ' is-empty');
+
+      var rows = [];
+      variant.difficulties.forEach(function (d) {
+        boardsFor(variant, d).forEach(function (board) {
+          var s = ScoreLib.boardStats(id, d.id, board.suffix);
+          if (!s.played) return;
+          rows.push(
+            '<li><span class="board">' + d.name +
+            (board.label ? '<em>' + board.label + '</em>' : '') + '</span>' +
+            '<span class="tally">' + s.won + '/' + s.played + '</span>' +
+            '<span class="rate">' + ScoreLib.winRate(s) + '%</span>' +
+            '<span class="best">' + (s.bestTime ? formatTime(s.bestTime) : '—') + '</span></li>'
+          );
+        });
+      });
+
+      section.innerHTML =
+        '<header class="stat-group-head"><h4>' + variant.name + '</h4>' +
+        '<span>' + (vs.played
+          ? vs.won + ' of ' + vs.played + ' · ' + ScoreLib.winRate(vs) + '%'
+          : 'not played yet') + '</span></header>' +
+        (rows.length
+          ? '<ul class="board-list"><li class="head"><span class="board">Level</span>' +
+            '<span class="tally">Won</span><span class="rate">Rate</span>' +
+            '<span class="best">Best time</span></li>' + rows.join('') + '</ul>'
+          : '');
+      body.appendChild(section);
+    });
+
+    openModal('#statsModal');
+  }
+
+  /**
+   * Every configuration of a level that has its own record: the plain one,
+   * plus one per non-default option choice. Enumerating the combinations is
+   * fine while there is a single axis with three values.
+   */
+  function boardsFor(variant, difficulty) {
+    var specs = Game.optionSpecs(variant);
+    if (!specs.length) return [{ suffix: '', label: '' }];
+    var out = [];
+    specs.forEach(function (spec) {
+      spec.choices.forEach(function (choice) {
+        var opts = Game.defaultOptions(variant);
+        opts[spec.id] = choice.value;
+        var suffix = Game.optionKey(variant, opts);
+        if (out.some(function (b) { return b.suffix === suffix; })) return;
+        out.push({ suffix: suffix, label: suffix ? (choice.short || choice.name) : '' });
+      });
+    });
+    // the plain board first, then whatever was changed away from it
+    return out.sort(function (a, b) { return (a.suffix ? 1 : 0) - (b.suffix ? 1 : 0); });
   }
 
   /* --------------------------------------------------------------- modals */
@@ -504,7 +733,9 @@
       '<p>In the columns, cards stack <strong>down in alternating colours</strong> — a red six on a black seven. ' +
       'Only a king may move into an empty column.</p>' +
       '<p>Tap the stock to turn cards over. Tap any card to send it straight to a foundation when it fits; ' +
-      'otherwise tap it to select, then tap where it should go. You can drag instead.</p>',
+      'otherwise tap it to select, then tap where it should go. You can drag instead.</p>' +
+      '<p>Dealt from <strong>one or two suits</strong> the deck repeats itself, so far more cards fit ' +
+      'anywhere. With one suit there are no colours to alternate and rank alone decides.</p>',
     spider:
       '<p>Build columns <strong>down in one suit</strong>, from king to ace. Complete a run and it leaves the table — ' +
       'clear all eight to win.</p>' +
@@ -515,7 +746,9 @@
       '<p>Columns build <strong>down in alternating colours</strong>. The free cells each hold one card. ' +
       'Any column may take any card into a gap.</p>' +
       '<p>How many cards you can move at once depends on what is free: one, plus one per empty cell, ' +
-      'doubled for every empty column.</p>',
+      'doubled for every empty column.</p>' +
+      '<p>Dealt from <strong>one or two suits</strong> the deck repeats itself, so almost every card has ' +
+      'somewhere to go. With one suit there are no colours to alternate and rank alone decides.</p>',
     pyramid:
       '<p>Remove pairs of exposed cards that add up to <strong>thirteen</strong>. Aces count 1, jacks 11, queens 12. ' +
       'A king is thirteen by itself — tap it to discard it alone.</p>' +
@@ -528,18 +761,27 @@
   function bind() {
     $('#btnBack').addEventListener('click', function () {
       stopTimer();
+      recordAbandon();
       showScreen('home');
     });
     $('#btnNewDeal').addEventListener('click', function () {
       if (!App.variant) return;
-      startGame(App.variant.id, App.table.difficulty.id);
+      startGame(App.variant.id, App.table.difficulty.id, undefined, App.table.options);
     });
+    $('#btnRestart').addEventListener('click', restartDeal);
     el.btnUndo.addEventListener('click', undo);
     $('#btnHint').addEventListener('click', hint);
     el.btnAuto.addEventListener('click', autoFinish);
     $('#btnRules').addEventListener('click', showRules);
     $('#btnLevels').addEventListener('click', function () {
       if (App.variant) openDifficulty(App.variant.id);
+    });
+    $('#btnStats').addEventListener('click', showStats);
+    $('#btnClearStats').addEventListener('click', function () {
+      if (!global.confirm('Delete every score and statistic on this device?')) return;
+      ScoreLib.clearStats();
+      showStats();
+      renderHome();
     });
 
     $('#btnSound').addEventListener('click', function () {
@@ -558,12 +800,13 @@
         Snd.play('tap');
       });
     });
-    ['optSound', 'optEffects'].forEach(function (id) {
+    ['optSound', 'optEffects', 'optAutoFinish'].forEach(function (id) {
       var node = $('#' + id);
       if (!node) return;
       node.addEventListener('change', function () {
         App.prefs.sound = $('#optSound').checked;
         App.prefs.effects = $('#optEffects').checked;
+        App.prefs.autoFinish = $('#optAutoFinish').checked;
         applyPrefs();
       });
     });
@@ -574,14 +817,15 @@
 
     $('#btnResultRetry').addEventListener('click', function () {
       closeModal('#resultModal');
-      startGame(App.variant.id, App.table.difficulty.id);
+      startGame(App.variant.id, App.table.difficulty.id, undefined, App.table.options);
     });
     $('#btnResultSame').addEventListener('click', function () {
       closeModal('#resultModal');
-      startGame(App.variant.id, App.table.difficulty.id, App.table.seed);
+      startGame(App.variant.id, App.table.difficulty.id, App.table.seed, App.table.options);
     });
     $('#btnResultHome').addEventListener('click', function () {
       closeModal('#resultModal');
+      recordAbandon();
       showScreen('home');
     });
 
@@ -593,8 +837,12 @@
       if (document.body.dataset.screen !== 'game') return;
       if (ev.key === 'u' || (ev.key === 'z' && (ev.metaKey || ev.ctrlKey))) { ev.preventDefault(); undo(); }
       if (ev.key === 'h') hint();
+      if (ev.key === 'r') restartDeal();
       if (ev.key === ' ') { ev.preventDefault(); tapStock(); }
     });
+
+    // leaving the page part-way through a game still counts as a loss
+    global.addEventListener('pagehide', recordAbandon);
 
     ['pointerdown', 'keydown'].forEach(function (evt) {
       global.addEventListener(evt, function once() {
@@ -628,15 +876,26 @@
     renderHome();
     showScreen('home');
 
-    // ?game=spider&level=two&deal=1234 jumps straight into a deal
+    // ?game=klondike&level=strict&suits=1&deal=1234 jumps straight into a deal
     var params = new URLSearchParams(global.location.search);
     var gameParam = params.get('game');
     if (gameParam && Variants[gameParam]) {
+      var variant = Variants[gameParam];
       var levelParam = params.get('level');
-      var difficulties = Variants[gameParam].difficulties;
-      var match = difficulties.filter(function (d) { return d.id === levelParam; })[0];
+      var match = variant.difficulties.filter(function (d) { return d.id === levelParam; })[0];
       var deal = parseInt(params.get('deal'), 10);
-      startGame(gameParam, (match || difficulties[0]).id, isNaN(deal) ? undefined : deal);
+
+      // each option axis reads its own parameter, named after the axis
+      var opts = {};
+      Game.optionSpecs(variant).forEach(function (spec) {
+        var raw = params.get(spec.id);
+        if (raw === null) return;
+        var num = parseFloat(raw);
+        opts[spec.id] = isNaN(num) ? raw : num;
+      });
+
+      startGame(gameParam, (match || variant.difficulties[0]).id,
+        isNaN(deal) ? undefined : deal, Object.keys(opts).length ? opts : undefined);
     }
   }
 

@@ -9,6 +9,7 @@
 
   var STORE_KEY = 'solitaire-collection.scores.v1';
   var PREFS_KEY = 'solitaire-collection.prefs.v1';
+  var STATS_KEY = 'solitaire-collection.stats.v1';
 
   var POINTS = {
     foundation: 50,     // a card sent home
@@ -131,8 +132,9 @@
     return this.award(POINTS.hint, 'Hint');
   };
 
-  Score.prototype.onWin = function () {
+  Score.prototype.onWin = function (moves) {
     this.finishedAt = Date.now();
+    this.moves = moves || this.moves;
     var awards = [];
     awards.push(this.award(WIN_BASE * this.multiplier, 'Solved!'));
 
@@ -171,30 +173,40 @@
     try { global.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
   }
 
-  function key(variantId, difficultyId) { return variantId + ':' + difficultyId; }
-
-  function highScores(variantId, difficultyId) {
-    var all = readJSON(STORE_KEY, {});
-    return (all[key(variantId, difficultyId)] || []).slice(0, 5);
+  /**
+   * A board is identified by game, difficulty and any non-default options.
+   * The suffix is empty when every option sits at its default, so scores
+   * saved before options existed keep counting.
+   */
+  function key(variantId, difficultyId, suffix) {
+    return variantId + ':' + difficultyId + (suffix || '');
   }
 
-  function bestScore(variantId, difficultyId) {
-    var list = highScores(variantId, difficultyId);
+  function highScores(variantId, difficultyId, suffix) {
+    var all = readJSON(STORE_KEY, {});
+    return (all[key(variantId, difficultyId, suffix)] || []).slice(0, 5);
+  }
+
+  function bestScore(variantId, difficultyId, suffix) {
+    var list = highScores(variantId, difficultyId, suffix);
     return list.length ? list[0].score : 0;
   }
 
-  /** Best across every difficulty of one game — shown on the game cards. */
-  function bestForVariant(variantId, difficulties) {
+  /** Best across every board of one game, however it was configured. */
+  function bestForVariant(variantId) {
+    var all = readJSON(STORE_KEY, {});
+    var prefix = variantId + ':';
     var best = 0;
-    for (var i = 0; i < difficulties.length; i++) {
-      best = Math.max(best, bestScore(variantId, difficulties[i].id));
-    }
+    Object.keys(all).forEach(function (k) {
+      if (k.indexOf(prefix) !== 0) return;
+      (all[k] || []).forEach(function (s) { best = Math.max(best, s.score || 0); });
+    });
     return best;
   }
 
-  function submitScore(variantId, difficultyId, entry) {
+  function submitScore(variantId, difficultyId, suffix, entry) {
     var all = readJSON(STORE_KEY, {});
-    var k = key(variantId, difficultyId);
+    var k = key(variantId, difficultyId, suffix);
     var list = all[k] || [];
     list.push(entry);
     list.sort(function (a, b) { return b.score - a.score; });
@@ -203,20 +215,88 @@
     return all[k].indexOf(entry);
   }
 
-  function wins(variantId, difficulties) {
-    var count = 0;
-    for (var i = 0; i < difficulties.length; i++) {
-      count += highScores(variantId, difficulties[i].id).filter(function (s) {
-        return s.won;
-      }).length;
-    }
-    return count;
+  /* --------------------------------------------------------------- stats */
+
+  /*
+   * High scores only keep the best five of a board, which is no use for
+   * "how am I doing". Stats are counted separately and never pruned, in
+   * nested buckets: every result lands in the board it was played on, in
+   * its game, and in the running total. Keeping all three means a current
+   * win streak is a real number at each level rather than a guess made by
+   * adding up the level below.
+   */
+
+  function blank() {
+    return {
+      played: 0, won: 0, streak: 0, bestStreak: 0,
+      bestTime: 0, bestMoves: 0, totalTime: 0, totalScore: 0, lastPlayed: null
+    };
   }
+
+  function buckets(variantId, difficultyId, suffix) {
+    return ['__all', variantId, key(variantId, difficultyId, suffix)];
+  }
+
+  /**
+   * Fold one finished game into the stats.
+   * @param {{won:boolean,time:number,moves:number,score:number}} result
+   */
+  function recordResult(variantId, difficultyId, suffix, result) {
+    var all = readJSON(STATS_KEY, {});
+    var today = new Date().toISOString().slice(0, 10);
+
+    buckets(variantId, difficultyId, suffix).forEach(function (b) {
+      var s = all[b] || blank();
+      s.played++;
+      s.totalTime += result.time || 0;
+      s.totalScore += result.score || 0;
+      s.lastPlayed = today;
+      if (result.won) {
+        s.won++;
+        s.streak++;
+        if (s.streak > s.bestStreak) s.bestStreak = s.streak;
+        // bests only count on a win — a fast loss is not an achievement
+        if (!s.bestTime || result.time < s.bestTime) s.bestTime = result.time || 0;
+        if (!s.bestMoves || result.moves < s.bestMoves) s.bestMoves = result.moves || 0;
+      } else {
+        s.streak = 0;
+      }
+      all[b] = s;
+    });
+
+    writeJSON(STATS_KEY, all);
+  }
+
+  function statsFor(bucket) {
+    var all = readJSON(STATS_KEY, {});
+    return Object.assign(blank(), all[bucket] || {});
+  }
+
+  function boardStats(variantId, difficultyId, suffix) {
+    return statsFor(key(variantId, difficultyId, suffix));
+  }
+
+  function variantStats(variantId) { return statsFor(variantId); }
+  function overallStats() { return statsFor('__all'); }
+
+  function winRate(stat) {
+    return stat.played ? Math.round((stat.won / stat.played) * 100) : 0;
+  }
+
+  function clearStats() {
+    writeJSON(STATS_KEY, {});
+    writeJSON(STORE_KEY, {});
+  }
+
+  /** Wins across every board of one game — shown on the game cards. */
+  function wins(variantId) { return variantStats(variantId).won; }
 
   global.SC.Score = {
     Score: Score, POINTS: POINTS, RANKS: RANKS,
     highScores: highScores, bestScore: bestScore, bestForVariant: bestForVariant,
     submitScore: submitScore, wins: wins,
+    recordResult: recordResult, boardStats: boardStats, variantStats: variantStats,
+    overallStats: overallStats, winRate: winRate, clearStats: clearStats,
     loadPrefs: function () { return readJSON(PREFS_KEY, {}); },
     savePrefs: function (p) { writeJSON(PREFS_KEY, p); }
   };

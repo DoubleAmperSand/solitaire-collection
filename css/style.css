@@ -1099,6 +1099,59 @@ body[data-screen="game"] {
   color: var(--muted);
 }
 
+/* Extra axes offered beside the difficulty — Klondike and FreeCell's suits. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.options[hidden] {
+  display: none;
+}
+
+.option-row {
+  padding: 13px 15px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.option-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 9px;
+}
+
+.option-head strong {
+  font-family: var(--display);
+  font-size: 15px;
+}
+
+.option-head em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.segmented.wide {
+  width: 100%;
+  background: var(--surface);
+}
+
+.segmented.wide .seg-btn {
+  flex: 1;
+  padding: 8px 6px;
+}
+
+.option-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 15px;
+}
+
 .levels {
   display: flex;
   flex-direction: column;
@@ -1211,6 +1264,103 @@ body[data-screen="game"] {
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
+}
+
+.streak-line {
+  margin: 6px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ statistics */
+
+.stat-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.stat-group.is-empty {
+  opacity: 0.55;
+}
+
+.stat-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.stat-group-head h4 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 15px;
+}
+
+.stat-group-head span {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.board-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-list li+li {
+  border-top: 1px solid var(--line);
+}
+
+.board-list li.head {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-top: 0;
+}
+
+.board-list .tally,
+.board-list .rate,
+.board-list .best {
+  min-width: 46px;
+  text-align: right;
+}
+
+.board-list .board em {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-style: normal;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.btn.danger {
+  color: var(--bad);
+}
+
+.home-foot #btnStats {
+  margin-bottom: 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .score-list {
