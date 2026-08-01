@@ -22,7 +22,7 @@
    * and there was previously no way to answer the second. Bump this and
    * CACHE in sw.js together.
    */
-  var VERSION = '4';
+  var VERSION = '5';
   var RELEASED = '1 August 2026';
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
@@ -883,12 +883,11 @@
     toast('Update ready — it will apply next time you open the game');
   }
 
+  /* On the home screen as well as in settings: if this is not on screen, the
+     build being run is older than the one that started printing it. */
   function showVersion() {
-    var node = $('#versionLine');
-    if (!node) return;
-    node.textContent = 'Version ' + VERSION + ' · ' + RELEASED +
-      (global.navigator && global.navigator.serviceWorker &&
-        global.navigator.serviceWorker.controller ? ' · saved for offline' : '');
+    var text = 'Version ' + VERSION + ' · ' + RELEASED;
+    $$('.version-line').forEach(function (node) { node.textContent = text; });
   }
 
   function boot() {
